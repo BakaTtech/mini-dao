@@ -1,69 +1,53 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 contract BasicDAO {
-    address public owner;
-    uint256 public proposalThreshold;
-    uint256 public quorum;
-    uint256 public votingPeriod;
-    
     struct Proposal {
-        uint256 id;
+        uint id;
         string description;
-        uint256 voteCount;
+        uint voteCount;
         bool executed;
-        bool canceled;
-        address creator;
-        uint256 createdAt;
+        uint proposalEndTime;
+        mapping(address => bool) votes;
     }
     
-    mapping(uint256 => Proposal) public proposals;
-    mapping(address => uint256) public balances;
-    mapping(uint256 => mapping(address => bool)) public voted;
+    mapping(uint => Proposal) public proposals;
+    uint public proposalCount;
+    uint public quorum;
+    uint public votingPeriod;
     
-    event ProposalCreated(uint256 id, address creator);
-    event Voted(uint256 id, address voter);
-    event ProposalExecuted(uint256 id);
+    address public owner;
     
-    constructor(uint256 _proposalThreshold, uint256 _quorum, uint256 _votingPeriod) {
+    constructor(uint _quorum, uint _votingPeriod) {
         owner = msg.sender;
-        proposalThreshold = _proposalThreshold;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
     }
     
     function createProposal(string memory _description) public {
-        require(balances[msg.sender] >= proposalThreshold, "Insufficient balance to create proposal");
-        uint256 id = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender)));
-        proposals[id] = Proposal({
-            id: id,
+        proposalCount++;
+        proposals[proposalCount] = Proposal({
+            id: proposalCount,
             description: _description,
             voteCount: 0,
             executed: false,
-            canceled: false,
-            creator: msg.sender,
-            createdAt: block.timestamp
+            proposalEndTime: block.timestamp + votingPeriod
         });
-        emit ProposalCreated(id, msg.sender);
     }
     
-    function vote(uint256 _proposalId) public {
-        require(!voted[_proposalId][msg.sender], "Already voted");
-        require(!proposals[_proposalId].canceled, "Proposal canceled");
-        require(block.timestamp < proposals[_proposalId].createdAt + votingPeriod, "Voting period ended");
+    function vote(uint _proposalId) public {
+        require(block.timestamp < proposals[_proposalId].proposalEndTime, "Voting period has ended");
+        require(!proposals[_proposalId].votes[msg.sender], "Already voted");
         
-        voted[_proposalId][msg.sender] = true;
-        proposals[_proposalId].voteCount += balances[msg.sender];
-        emit Voted(_proposalId, msg.sender);
+        proposals[_proposalId].votes[msg.sender] = true;
+        proposals[_proposalId].voteCount++;
     }
     
-    function executeProposal(uint256 _proposalId) public {
-        Proposal storage proposal = proposals[_proposalId];
-        require(!proposal.executed, "Proposal already executed");
-        require(proposal.voteCount >= quorum, "Not enough votes");
-        require(block.timestamp >= proposal.createdAt + votingPeriod, "Voting period not ended");
+    function executeProposal(uint _proposalId) public {
+        require(!proposals[_proposalId].executed, "Proposal already executed");
+        require(proposals[_proposalId].voteCount >= quorum, "Quorum not reached");
+        require(block.timestamp >= proposals[_proposalId].proposalEndTime, "Voting period not ended");
         
-        proposal.executed = true;
-        emit ProposalExecuted(_proposalId);
+        proposals[_proposalId].executed = true;
     }
 }
