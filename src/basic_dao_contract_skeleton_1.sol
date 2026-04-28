@@ -1,60 +1,70 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.19;
+pragma solidity ^0.8.0;
 
 contract BasicDAO {
     struct Proposal {
         uint256 id;
         string description;
-        uint256 voteStart;
-        uint256 voteEnd;
+        uint256 voteCount;
+        bool executed;
+        uint256 deadline;
         uint256 yesVotes;
         uint256 noVotes;
-        bool executed;
-        bool canceled;
     }
 
-    struct Vote {
-        bool voted;
-        bool support;
-    }
-
-    address public owner;
+    mapping(uint256 => Proposal) public proposals;
+    mapping(address => bool) public members;
+    mapping(uint256 => mapping(address => bool)) public hasVoted;
+    
+    uint256 public proposalCount;
     uint256 public quorum;
     uint256 public votingPeriod;
-    mapping(uint256 => Proposal) public proposals;
-    mapping(address => mapping(uint256 => Vote)) public votes;
-    uint256 public proposalCount;
+    
+    address public owner;
+    
+    event ProposalCreated(uint256 id, string description);
+    event Voted(uint256 id, address voter, bool support);
+    event ProposalExecuted(uint256 id);
 
     constructor(uint256 _quorum, uint256 _votingPeriod) {
         owner = msg.sender;
         quorum = _quorum;
         votingPeriod = _votingPeriod;
     }
-
+    
+    function addMember(address member) public {
+        require(msg.sender == owner, "Only owner can add members");
+        members[member] = true;
+    }
+    
     function createProposal(string memory description) public {
+        require(members[msg.sender], "Only members can create proposals");
         proposalCount++;
         proposals[proposalCount] = Proposal({
             id: proposalCount,
             description: description,
-            voteStart: block.timestamp,
-            voteEnd: block.timestamp + votingPeriod,
-            yesVotes: 0,
-            noVotes: 0,
+            voteCount: 0,
             executed: false,
-            canceled: false
+            deadline: block.timestamp + votingPeriod,
+            yesVotes: 0,
+            noVotes: 0
         });
+        emit ProposalCreated(proposalCount, description);
     }
-
+    
     function vote(uint256 proposalId, bool support) public {
-        require(block.timestamp < proposals[proposalId].voteEnd, "Voting period has ended");
-        require(!votes[msg.sender][proposalId].voted, "Already voted");
+        require(members[msg.sender], "Only members can vote");
+        require(!hasVoted[proposalId][msg.sender], "Already voted");
+        require(block.timestamp < proposals[proposalId].deadline, "Voting period ended");
+        require(!proposals[proposalId].executed, "Proposal already executed");
         
-        votes[msg.sender][proposalId] = Vote({voted: true, support: support});
-        
+        hasVoted[proposalId][msg.sender] = true;
         if (support) {
             proposals[proposalId].yesVotes++;
         } else {
             proposals[proposalId].noVotes++;
         }
+        proposals[proposalId].voteCount++;
+        emit Voted(proposalId, msg.sender, support);
     }
 }

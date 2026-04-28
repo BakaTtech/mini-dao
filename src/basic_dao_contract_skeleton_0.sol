@@ -2,83 +2,90 @@
 pragma solidity ^0.8.0;
 
 contract BasicDAO {
+    // Governance structures
+    address public owner;
+    mapping(address => bool) public isMember;
+    uint256 public proposalCount;
+    
+    // Proposal structure
     struct Proposal {
         uint256 id;
         string description;
-        uint256 voteStart;
-        uint256 voteEnd;
-        uint256 yesVotes;
-        uint256 noVotes;
+        uint256 voteCount;
         bool executed;
-        bool isActive;
+        bool closed;
     }
-
+    
+    // Vote structure
     struct Vote {
-        bool hasVoted;
         bool vote;
+        bool hasVoted;
     }
-
-    address public owner;
-    uint256 public quorum;
-    uint256 public votingPeriod;
+    
+    // State variables
     mapping(uint256 => Proposal) public proposals;
-    mapping(address => mapping(uint256 => Vote)) public votes;
-    uint256 public proposalCount;
-
+    mapping(uint256 => mapping(address => Vote)) public votes;
+    
+    // Events
     event ProposalCreated(uint256 id, string description);
-    event Voted(address voter, uint256 proposalId, bool vote);
+    event Voted(uint256 proposalId, address voter, bool vote);
     event ProposalExecuted(uint256 id);
-
-    constructor(uint256 _quorum, uint256 _votingPeriod) {
-        owner = msg.sender;
-        quorum = _quorum;
-        votingPeriod = _votingPeriod;
-        proposalCount = 0;
+    
+    // Modifiers
+    modifier onlyOwner() {
+        require(msg.sender == owner, "Only owner can call this function");
+        _;
     }
-
-    function createProposal(string memory _description) public {
+    
+    modifier onlyMembers() {
+        require(isMember[msg.sender], "Only members can call this function");
+        _;
+    }
+    
+    // Constructor
+    constructor() {
+        owner = msg.sender;
+        isMember[msg.sender] = true;
+    }
+    
+    // Core functions
+    function createProposal(string memory _description) public onlyMembers {
         proposalCount++;
         proposals[proposalCount] = Proposal({
             id: proposalCount,
             description: _description,
-            voteStart: block.timestamp,
-            voteEnd: block.timestamp + votingPeriod,
-            yesVotes: 0,
-            noVotes: 0,
+            voteCount: 0,
             executed: false,
-            isActive: true
+            closed: false
         });
         emit ProposalCreated(proposalCount, _description);
     }
-
-    function vote(uint256 _proposalId, bool _vote) public {
-        require(proposals[_proposalId].isActive, "Proposal is not active");
-        require(block.timestamp <= proposals[_proposalId].voteEnd, "Voting period has ended");
-        require(!votes[msg.sender][_proposalId].hasVoted, "You have already voted");
-
-        votes[msg.sender][_proposalId] = Vote({
-            hasVoted: true,
-            vote: _vote
-        });
-
-        if (_vote) {
-            proposals[_proposalId].yesVotes++;
-        } else {
-            proposals[_proposalId].noVotes++;
-        }
-
-        emit Voted(msg.sender, _proposalId, _vote);
+    
+    function vote(uint256 _proposalId, bool _vote) public onlyMembers {
+        require(!proposals[_proposalId].closed, "Proposal is closed");
+        require(!votes[_proposalId][msg.sender].hasVoted, "Already voted");
+        
+        votes[_proposalId][msg.sender] = Vote({vote: _vote, hasVoted: true});
+        proposals[_proposalId].voteCount += _vote ? 1 : 0;
+        emit Voted(_proposalId, msg.sender, _vote);
     }
-
-    function executeProposal(uint256 _proposalId) public {
-        Proposal storage proposal = proposals[_proposalId];
-        require(proposal.isActive, "Proposal is not active");
-        require(block.timestamp > proposal.voteEnd, "Voting period has not ended");
-        require(proposal.yesVotes + proposal.noVotes >= quorum, "Quorum not reached");
-        require(!proposal.executed, "Proposal already executed");
-
-        proposal.executed = true;
-        proposal.isActive = false;
+    
+    function executeProposal(uint256 _proposalId) public onlyMembers {
+        require(!proposals[_proposalId].executed, "Proposal already executed");
+        require(!proposals[_proposalId].closed, "Proposal is closed");
+        require(proposals[_proposalId].voteCount > 0, "No votes");
+        
+        proposals[_proposalId].executed = true;
+        proposals[_proposalId].closed = true;
         emit ProposalExecuted(_proposalId);
+    }
+    
+    // Membership functions
+    function addMember(address _member) public onlyOwner {
+        isMember[_member] = true;
+    }
+    
+    function removeMember(address _member) public onlyOwner {
+        isMember[_member] = false;
     }
 }
