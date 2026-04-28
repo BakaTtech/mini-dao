@@ -1,75 +1,60 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.0;
+pragma solidity ^0.8.19;
 
 contract BasicDAO {
-    address public owner;
-    uint256 public proposalCount;
-    uint256 public quorum;
-    
     struct Proposal {
         uint256 id;
         string description;
-        uint256 voteCount;
+        uint256 voteStart;
+        uint256 voteEnd;
+        uint256 yesVotes;
+        uint256 noVotes;
         bool executed;
-        bool cancelled;
+        bool canceled;
     }
-    
+
     struct Vote {
+        bool voted;
         bool support;
-        uint256 weight;
     }
-    
+
+    address public owner;
+    uint256 public quorum;
+    uint256 public votingPeriod;
     mapping(uint256 => Proposal) public proposals;
     mapping(address => mapping(uint256 => Vote)) public votes;
-    mapping(address => uint256) public tokenBalances;
-    
-    event ProposalCreated(uint256 id, string description);
-    event Voted(address voter, uint256 proposalId, bool support);
-    event ProposalExecuted(uint256 id);
-    
-    constructor(uint256 _quorum) {
+    uint256 public proposalCount;
+
+    constructor(uint256 _quorum, uint256 _votingPeriod) {
         owner = msg.sender;
         quorum = _quorum;
+        votingPeriod = _votingPeriod;
     }
-    
-    function createProposal(string memory _description) public {
+
+    function createProposal(string memory description) public {
         proposalCount++;
         proposals[proposalCount] = Proposal({
             id: proposalCount,
-            description: _description,
-            voteCount: 0,
+            description: description,
+            voteStart: block.timestamp,
+            voteEnd: block.timestamp + votingPeriod,
+            yesVotes: 0,
+            noVotes: 0,
             executed: false,
-            cancelled: false
+            canceled: false
         });
-        emit ProposalCreated(proposalCount, _description);
     }
-    
-    function vote(uint256 _proposalId, bool _support) public {
-        require(!proposals[_proposalId].executed, "Proposal already executed");
-        require(!proposals[_proposalId].cancelled, "Proposal cancelled");
-        require(tokenBalances[msg.sender] > 0, "No voting power");
+
+    function vote(uint256 proposalId, bool support) public {
+        require(block.timestamp < proposals[proposalId].voteEnd, "Voting period has ended");
+        require(!votes[msg.sender][proposalId].voted, "Already voted");
         
-        votes[msg.sender][_proposalId] = Vote({
-            support: _support,
-            weight: tokenBalances[msg.sender]
-        });
+        votes[msg.sender][proposalId] = Vote({voted: true, support: support});
         
-        if (_support) {
-            proposals[_proposalId].voteCount += tokenBalances[msg.sender];
+        if (support) {
+            proposals[proposalId].yesVotes++;
+        } else {
+            proposals[proposalId].noVotes++;
         }
-        
-        emit Voted(msg.sender, _proposalId, _support);
-    }
-    
-    function executeProposal(uint256 _proposalId) public {
-        require(!proposals[_proposalId].executed, "Proposal already executed");
-        require(proposals[_proposalId].voteCount >= quorum, "Not enough votes");
-        
-        proposals[_proposalId].executed = true;
-        emit ProposalExecuted(_proposalId);
-    }
-    
-    function depositTokens(uint256 _amount) public {
-        tokenBalances[msg.sender] += _amount;
     }
 }
