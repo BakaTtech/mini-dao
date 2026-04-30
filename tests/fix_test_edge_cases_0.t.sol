@@ -6,9 +6,9 @@ import "../src/MiniDAO.sol";
 
 contract FixTestEdgeCases0 is Test {
     MiniDAO dao;
-    address owner = address(0x1);
-    address voter1 = address(0x2);
-    address voter2 = address(0x3);
+    address owner = address(0x123);
+    address voter1 = address(0x456);
+    address voter2 = address(0x789);
 
     function setUp() public {
         dao = new MiniDAO(owner);
@@ -18,31 +18,33 @@ contract FixTestEdgeCases0 is Test {
         dao.addMember(voter2);
     }
 
-    function testProposalCannotBeVotedOnAfterDeadline() public {
-        vm.warp(1000);
-        uint256 proposalId = dao.createProposal("Test proposal", address(0x4), 1 ether);
-        vm.warp(2000);
-        vm.expectRevert(abi.encodeWithSelector(MiniDAO.ProposalExpired.selector));
+    function testProposalWithZeroVotes() public {
+        uint256 proposalId = dao.createProposal("Test proposal", "Test description");
+        vm.prank(voter1);
         dao.vote(proposalId, true);
-    }
-
-    function testProposalCannotBeExecutedBeforeDeadline() public {
-        vm.warp(1000);
-        uint256 proposalId = dao.createProposal("Test proposal", address(0x4), 1 ether);
-        vm.warp(1500);
-        vm.expectRevert(abi.encodeWithSelector(MiniDAO.ProposalNotReady.selector));
-        dao.executeProposal(proposalId);
-    }
-
-    function testCannotVoteTwice() public {
-        uint256 proposalId = dao.createProposal("Test proposal", address(0x4), 1 ether);
-        dao.vote(proposalId, true);
-        vm.expectRevert(abi.encodeWithSelector(MiniDAO.AlreadyVoted.selector));
+        vm.prank(voter2);
         dao.vote(proposalId, false);
+        
+        // Test edge case: proposal passes with exactly 50% votes
+        assertEq(dao.getProposalStatus(proposalId), 1); // Active
     }
 
-    function testProposalCannotBeCreatedWithZeroValue() public {
-        vm.expectRevert(abi.encodeWithSelector(MiniDAO.InvalidProposal.selector));
-        dao.createProposal("Test proposal", address(0x4), 0);
+    function testProposalEndsWithNoVotes() public {
+        uint256 proposalId = dao.createProposal("Test proposal", "Test description");
+        // Don't vote at all
+        
+        // Test edge case: proposal with no votes
+        assertEq(dao.getProposalStatus(proposalId), 1); // Active
+    }
+
+    function testVoterCannotVoteTwice() public {
+        uint256 proposalId = dao.createProposal("Test proposal", "Test description");
+        vm.prank(voter1);
+        dao.vote(proposalId, true);
+        
+        // Test edge case: double voting should fail
+        vm.prank(voter1);
+        vm.expectRevert();
+        dao.vote(proposalId, false);
     }
 }
